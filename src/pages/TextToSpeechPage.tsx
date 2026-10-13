@@ -1,7 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Pause, RotateCcw, Upload, Volume2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Play,
+  Square,
+  Pause,
+  Upload,
+  Volume2,
+  Type,
+  Eye,
+  Sliders,
+  Check,
+  RotateCcw,
+} from 'lucide-react';
 import { TtsKidIllustration } from '../components/Illustrations';
 import { extractDocumentText } from '../utils/documentExtractor';
+import { useReadingSettings, AVAILABLE_FONTS } from '../context/ReadingContext';
 
 interface SpeedOption {
   label: string;
@@ -25,22 +37,64 @@ const FLOATING_LETTERS = [
   { l: 'z', x: '85%', y: '68%', color: '#C4B5FD', size: 48, delay: 0.2, rot: 14 },
 ];
 
+interface SentenceItem {
+  globalIndex: number;
+  text: string;
+}
+
+interface ParagraphItem {
+  paragraphIndex: number;
+  sentences: SentenceItem[];
+}
+
 export const TextToSpeechPage: React.FC = () => {
-  const [text, setText] = useState<string>(
-    'Dyslexia is a superpower of creative and big-picture thinking. When words are read aloud, learning becomes effortless and fun!'
-  );
+  const {
+    text,
+    setText,
+    selectedFont,
+    setSelectedFont,
+    fontSize,
+    lineHeight,
+    letterSpacing,
+    wordSpacing,
+    paragraphSpacing,
+    textAlign,
+    bgColor,
+    textColor,
+  } = useReadingSettings();
+
   const [speed, setSpeed] = useState<number>(1.0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [activeWordIdx, setActiveWordIdx] = useState<number>(-1);
+  const [activeSentenceIndex, setActiveSentenceIndex] = useState<number>(-1);
   const [status, setStatus] = useState<string>('');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [loadingFile, setLoadingFile] = useState<boolean>(false);
+  const [activeWordIdx, setActiveWordIdx] = useState<number>(-1);
+  const [viewMode, setViewMode] = useState<'focus' | 'edit'>('focus');
 
   const synthRef = useRef<SpeechSynthesis | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
+  const activeIndexRef = useRef<number>(-1);
+  const sentenceRefs = useRef<{ [key: number]: HTMLSpanElement | null }>({});
+  const viewerContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Sync refs with state
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeSentenceIndex;
+  }, [activeSentenceIndex]);
+
+  // Load browser voices
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       synthRef.current = window.speechSynthesis;
@@ -48,7 +102,6 @@ export const TextToSpeechPage: React.FC = () => {
       const updateVoices = () => {
         if (!synthRef.current) return;
         const availableVoices = synthRef.current.getVoices();
-        // Prefer English voices if available, or all voices
         const enVoices = availableVoices.filter(v => v.lang.startsWith('en'));
         const listToUse = enVoices.length > 0 ? enVoices : availableVoices;
         setVoices(listToUse);
@@ -67,76 +120,148 @@ export const TextToSpeechPage: React.FC = () => {
     }
   }, []);
 
-  const stopReading = () => {
+  // Parse paragraphs and sentences
+  const { paragraphs, allSentences } = useMemo(() => {
+    const rawParagraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+    const parsedParagraphs: ParagraphItem[] = [];
+    const parsedSentences: SentenceItem[] = [];
+    let count = 0;
+
+    rawParagraphs.forEach((pText, pIdx) => {
+      // Split on sentence boundaries: ., !, ?, followed by whitespace or end of line
+      const sMatches = pText
+        .split(/(?<=[.?!])\s+|\n+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const pSentences: SentenceItem[] = [];
+      sMatches.forEach(sText => {
+        const item: SentenceItem = {
+          globalIndex: count++,
+          text: sText,
+        };
+        pSentences.push(item);
+        parsedSentences.push(item);
+      });
+
+      if (pSentences.length > 0) {
+        parsedParagraphs.push({
+          paragraphIndex: pIdx,
+          sentences: pSentences,
+        });
+      }
+    });
+
+    return { paragraphs: parsedParagraphs, allSentences: parsedSentences };
+  }, [text]);
+
+  const stopReading = (finished = false) => {
     if (synthRef.current) {
       synthRef.current.cancel();
     }
+    isPlayingRef.current = false;
+    isPausedRef.current = false;
+    activeIndexRef.current = -1;
+
     setIsPlaying(false);
     setIsPaused(false);
+    setActiveSentenceIndex(-1);
     setActiveWordIdx(-1);
-    setStatus('');
+
+    if (finished) {
+      setStatus('Finished reading aloud! Complete text restored.');
+    } else {
+      setStatus('');
+    }
   };
 
-  const handleSpeak = (textToSpeak: string) => {
-    stopReading();
-    const clean = textToSpeak.trim();
-    if (!clean) {
-      setStatus('Please type or upload some text first!');
+  const speakSentence = (index: number) => {
+    if (!isPlayingRef.current || isPausedRef.current) return;
+
+    if (index >= allSentences.length) {
+      stopReading(true);
       return;
     }
 
     if (!synthRef.current) {
       setStatus('Speech synthesis is not available in your browser.');
+      stopReading();
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(clean);
+    activeIndexRef.current = index;
+    setActiveSentenceIndex(index);
+    setStatus(`Reading sentence ${index + 1} of ${allSentences.length}...`);
+
+    // Smooth auto-scroll to current sentence
+    const el = sentenceRefs.current[index];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    const currentSentence = allSentences[index].text;
+    const utterance = new SpeechSynthesisUtterance(currentSentence);
     utterance.rate = speed;
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }
 
-    let wordCounter = 0;
-    utterance.onboundary = event => {
-      if (event.name === 'word') {
-        setActiveWordIdx(wordCounter);
-        wordCounter++;
-      }
-    };
-
     utterance.onend = () => {
-      setIsPlaying(false);
-      setIsPaused(false);
-      setActiveWordIdx(-1);
-      setStatus('Finished reading!');
+      if (isPlayingRef.current && !isPausedRef.current) {
+        speakSentence(index + 1);
+      }
     };
 
     utterance.onerror = event => {
       if (event.error !== 'interrupted' && event.error !== 'canceled') {
-        setStatus(`Error reading text: ${event.error}`);
+        setStatus(`Error reading sentence: ${event.error}`);
+        stopReading();
       }
-      setIsPlaying(false);
-      setIsPaused(false);
     };
 
-    utteranceRef.current = utterance;
     synthRef.current.speak(utterance);
-    setIsPlaying(true);
-    setIsPaused(false);
-    setStatus('Reading aloud...');
   };
 
-  const handlePauseResume = () => {
-    if (!synthRef.current) return;
-    if (isPaused) {
-      synthRef.current.resume();
-      setIsPaused(false);
-      setStatus('Reading resumed...');
-    } else {
-      synthRef.current.pause();
-      setIsPaused(true);
-      setStatus('Reading paused.');
+  const startReading = (fromIndex = 0) => {
+    if (allSentences.length === 0) {
+      setStatus('Please enter or upload some text first!');
+      return;
     }
+
+    if (synthRef.current) {
+      synthRef.current.cancel();
+    }
+
+    isPlayingRef.current = true;
+    isPausedRef.current = false;
+    setIsPlaying(true);
+    setIsPaused(false);
+    setViewMode('focus');
+
+    speakSentence(fromIndex);
+  };
+
+  const handlePause = () => {
+    if (!synthRef.current) return;
+    isPausedRef.current = true;
+    setIsPaused(true);
+    synthRef.current.cancel(); // Clears active audio buffer while keeping activeSentenceIndex intact
+    setStatus(`Paused on sentence ${activeSentenceIndex + 1}. Press Resume to continue.`);
+  };
+
+  const handleResume = () => {
+    if (!synthRef.current) return;
+    isPausedRef.current = false;
+    isPlayingRef.current = true;
+    setIsPaused(false);
+    setIsPlaying(true);
+    const resumeIndex = activeIndexRef.current >= 0 ? activeIndexRef.current : 0;
+    speakSentence(resumeIndex);
+  };
+
+  const handleSentenceClick = (index: number) => {
+    // Allows user to click any sentence to immediately jump reading to it
+    startReading(index);
   };
 
   const speakSingleWord = (word: string, index: number) => {
@@ -165,7 +290,7 @@ export const TextToSpeechPage: React.FC = () => {
       const result = await extractDocumentText(file);
       setText(result.text);
       stopReading();
-      setStatus(`Successfully loaded "${file.name}" (${result.wordCount} words)! Press Listen.`);
+      setStatus(`Loaded "${file.name}" (${result.wordCount} words)! Press Play to listen with sentence focus.`);
     } catch (err: any) {
       setStatus(err.message || 'Could not load file.');
     } finally {
@@ -196,7 +321,7 @@ export const TextToSpeechPage: React.FC = () => {
         </div>
       ))}
 
-      {/* Hero Section */}
+      {/* Hero Header */}
       <div className="tts-hero">
         <div className="tts-sound-rings" aria-hidden="true">
           <div className="tts-ring tts-ring-1" />
@@ -210,13 +335,14 @@ export const TextToSpeechPage: React.FC = () => {
               Text to <span className="tts-hero-accent">Speech</span>
             </h1>
             <p>
-              Paste any text and hear it read aloud in a clear, natural voice. Click any word to hear it on its own.
+              Listen with automatic sentence focus mode in your chosen dyslexia-friendly font. Inactive text gently dims
+              while the spoken sentence shines clearly.
             </p>
           </div>
           <div className="tts-hero-art">
             <TtsKidIllustration playing={isPlaying} />
             <div className="tts-kid-label">
-              {isPlaying ? 'Listening...' : 'Press Listen!'}
+              {isPlaying ? (isPaused ? 'Paused' : 'Focus Mode On!') : 'Press Listen!'}
             </div>
           </div>
         </div>
@@ -226,6 +352,7 @@ export const TextToSpeechPage: React.FC = () => {
       <div className="tts-main">
         {/* Controls Strip */}
         <div className="tts-controls-strip">
+          {/* Speed Pills */}
           <div className="tts-ctrl-group">
             <span className="tts-ctrl-label">Speed</span>
             <div className="tts-speed-row">
@@ -235,6 +362,7 @@ export const TextToSpeechPage: React.FC = () => {
                   type="button"
                   className={`tts-speed-btn ${speed === opt.value ? 'active' : ''}`}
                   onClick={() => setSpeed(opt.value)}
+                  aria-label={`Speech rate ${opt.label}`}
                 >
                   {opt.label}
                 </button>
@@ -242,6 +370,7 @@ export const TextToSpeechPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Voice Select */}
           {voices.length > 0 && (
             <div className="tts-ctrl-group">
               <span className="tts-ctrl-label">Voice</span>
@@ -252,6 +381,7 @@ export const TextToSpeechPage: React.FC = () => {
                   const match = voices.find(v => v.name === e.target.value);
                   if (match) setSelectedVoice(match);
                 }}
+                aria-label="Speech Voice"
               >
                 {voices.map(v => (
                   <option key={v.name} value={v.name}>
@@ -262,11 +392,35 @@ export const TextToSpeechPage: React.FC = () => {
             </div>
           )}
 
+          {/* Dyslexia Font Selector Quick Pill */}
           <div className="tts-ctrl-group">
-            <span className="tts-ctrl-label">Upload document</span>
+            <span className="tts-ctrl-label">Reading Font</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <select
+                className="tts-voice-select"
+                value={selectedFont.id}
+                onChange={e => {
+                  const f = AVAILABLE_FONTS.find(font => font.id === e.target.value);
+                  if (f) setSelectedFont(f);
+                }}
+                aria-label="Dyslexia Font"
+                style={{ fontWeight: 600, color: '#4c0593' }}
+              >
+                {AVAILABLE_FONTS.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.desc})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Document Upload Button */}
+          <div className="tts-ctrl-group">
+            <span className="tts-ctrl-label">Upload File</span>
             <label className="tts-upload-btn">
               <Upload size={14} style={{ marginRight: 6 }} />
-              {loadingFile ? 'Reading file...' : 'Choose file (.txt, .pdf, .docx)'}
+              {loadingFile ? 'Loading...' : 'Choose file (.txt, .pdf, .docx)'}
               <input
                 type="file"
                 accept=".txt,.pdf,.docx"
@@ -278,49 +432,165 @@ export const TextToSpeechPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Text Input */}
-        <textarea
-          className="tts-textarea"
-          placeholder="Type or paste your text here..."
-          value={text}
-          onChange={e => {
-            setText(e.target.value);
-            stopReading();
-          }}
-          rows={7}
-        />
+        {/* View Mode Bar: Reading Focus View vs Edit Text */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div className="tts-mode-switch">
+            <button
+              type="button"
+              className={`tts-mode-btn ${viewMode === 'focus' ? 'active' : ''}`}
+              onClick={() => setViewMode('focus')}
+            >
+              <Eye size={14} style={{ display: 'inline', marginRight: 5 }} />
+              Sentence Focus Mode
+            </button>
+            <button
+              type="button"
+              className={`tts-mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
+              onClick={() => setViewMode('edit')}
+            >
+              <Sliders size={14} style={{ display: 'inline', marginRight: 5 }} />
+              Edit Text
+            </button>
+          </div>
 
-        {/* Action Buttons */}
-        <div className="tts-btn-row">
-          <button
-            type="button"
-            className={`tts-listen-btn ${isPlaying ? 'is-playing' : ''}`}
-            onClick={() => {
-              if (isPlaying) {
-                stopReading();
-              } else {
-                handleSpeak(text);
-              }
+          <div className="tts-font-badge">
+            <Type size={14} />
+            <span>Active Font: <strong>{selectedFont.name}</strong></span>
+          </div>
+        </div>
+
+        {/* Reading Content Area */}
+        {viewMode === 'focus' ? (
+          /* Sentence-Level Reading Focus Viewer with Applied Dyslexia Typography */
+          <div
+            ref={viewerContainerRef}
+            className={`tts-reading-viewer ${isPlaying ? 'reading-active' : ''}`}
+            style={{
+              fontFamily: selectedFont.cssFamily,
+              fontSize: `${fontSize}px`,
+              lineHeight,
+              letterSpacing: `${letterSpacing}em`,
+              wordSpacing: `${wordSpacing}em`,
+              textAlign,
+              backgroundColor: bgColor || '#ffffff',
+              color: textColor || '#1e1b4b',
             }}
+            aria-live="polite"
           >
-            <span className="tts-listen-icon">
-              {isPlaying ? <Square size={16} fill="white" /> : <Play size={16} fill="white" />}
-            </span>
-            {isPlaying ? 'Stop' : 'Listen'}
-          </button>
+            {paragraphs.length > 0 ? (
+              paragraphs.map(p => (
+                <div
+                  key={p.paragraphIndex}
+                  className="tts-paragraph"
+                  style={{ ['--p-spacing' as any]: `${paragraphSpacing}em` }}
+                >
+                  {p.sentences.map(sentence => {
+                    const isActive = activeSentenceIndex === sentence.globalIndex;
+                    return (
+                      <span
+                        key={sentence.globalIndex}
+                        ref={el => (sentenceRefs.current[sentence.globalIndex] = el)}
+                        className={`tts-sentence ${isActive ? 'is-active' : ''}`}
+                        onClick={() => handleSentenceClick(sentence.globalIndex)}
+                        title="Click to play from this sentence"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            handleSentenceClick(sentence.globalIndex);
+                          }
+                        }}
+                      >
+                        {isActive && (
+                          <span className="tts-sentence-badge" aria-hidden="true">
+                            ▶
+                          </span>
+                        )}
+                        {sentence.text}{' '}
+                      </span>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <p style={{ color: '#9ca3af', fontStyle: 'italic' }}>
+                Your reading text is empty. Click "Edit Text" or upload a file above.
+              </p>
+            )}
+          </div>
+        ) : (
+          /* Editable Textarea */
+          <textarea
+            className="tts-textarea"
+            placeholder="Type or paste your text here..."
+            value={text}
+            onChange={e => {
+              setText(e.target.value);
+              stopReading();
+            }}
+            rows={7}
+            style={{
+              fontFamily: selectedFont.cssFamily,
+              fontSize: `${fontSize}px`,
+              lineHeight,
+              letterSpacing: `${letterSpacing}em`,
+              wordSpacing: `${wordSpacing}em`,
+            }}
+            aria-label="Editable text content"
+          />
+        )}
 
+        {/* Action Controls Row */}
+        <div className="tts-btn-row">
+          {/* Play/Listen button */}
+          {!isPlaying ? (
+            <button
+              type="button"
+              className="tts-listen-btn"
+              onClick={() => startReading(0)}
+              aria-label="Play reading aloud with sentence focus mode"
+            >
+              <span className="tts-listen-icon">
+                <Play size={16} fill="white" />
+              </span>
+              Listen
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="tts-listen-btn is-playing"
+              onClick={() => stopReading()}
+              aria-label="Stop reading aloud"
+            >
+              <span className="tts-listen-icon">
+                <Square size={16} fill="white" />
+              </span>
+              Stop
+            </button>
+          )}
+
+          {/* Pause / Resume Button */}
           {isPlaying && (
             <button
               type="button"
               className="tts-clear-btn"
-              onClick={handlePauseResume}
-              style={{ background: '#f5f3ff', borderColor: '#c4b5fd', color: '#6d28d9' }}
+              onClick={isPaused ? handleResume : handlePause}
+              style={{
+                background: isPaused ? '#ecfdf5' : '#ede9fe',
+                borderColor: isPaused ? '#10b981' : '#7c3aed',
+                color: isPaused ? '#065f46' : '#6d28d9',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+              aria-label={isPaused ? 'Resume reading' : 'Pause reading'}
             >
-              {isPaused ? <Play size={16} style={{ marginRight: 6 }} /> : <Pause size={16} style={{ marginRight: 6 }} />}
+              {isPaused ? <Play size={16} /> : <Pause size={16} />}
               {isPaused ? 'Resume' : 'Pause'}
             </button>
           )}
 
+          {/* Clear / Reset text */}
           <button
             type="button"
             className="tts-clear-btn"
@@ -329,6 +599,7 @@ export const TextToSpeechPage: React.FC = () => {
               stopReading();
               setStatus('Cleared text.');
             }}
+            aria-label="Clear reading text"
           >
             Clear
           </button>
@@ -336,18 +607,18 @@ export const TextToSpeechPage: React.FC = () => {
 
         {/* Feedback / Status */}
         {status && (
-          <div className={`tts-status ${isPlaying ? 'is-reading' : ''}`}>
-            {isPlaying && <span className="tts-status-dot" />}
-            <Volume2 size={16} style={{ marginRight: 4 }} />
+          <div className={`tts-status ${isPlaying && !isPaused ? 'is-reading' : ''}`}>
+            {isPlaying && !isPaused && <span className="tts-status-dot" />}
+            <Volume2 size={16} style={{ marginRight: 4, flexShrink: 0 }} />
             <span>{status}</span>
           </div>
         )}
 
-        {/* Interactive Word Click Panel */}
+        {/* Click-to-Hear Individual Words Panel */}
         {words.length > 0 && (
           <div className="tts-word-panel">
             <p className="tts-word-panel-hint">
-              Click any word below to hear it spoken individually:
+              <strong>Need help with a tricky word?</strong> Click any word below to hear it spoken individually in {selectedFont.name}:
             </p>
             <div className="tts-words">
               {words.map((word, idx) => (
@@ -355,6 +626,7 @@ export const TextToSpeechPage: React.FC = () => {
                   key={idx}
                   className={`tts-word ${activeWordIdx === idx ? 'active' : ''}`}
                   onClick={() => speakSingleWord(word, idx)}
+                  style={{ fontFamily: selectedFont.cssFamily }}
                   title={`Click to listen to "${word}"`}
                 >
                   {word}
@@ -368,15 +640,24 @@ export const TextToSpeechPage: React.FC = () => {
         <div className="tts-tips-row">
           <div className="tts-tip-card">
             <div className="tts-tip-bar" />
-            <p>Use 0.75× or 0.5× speed if the reading pace feels too fast or crowded.</p>
+            <p>
+              <strong>Reading Focus Mode:</strong> As speech plays, the current sentence stays in sharp focus while
+              surrounding lines gently dim. Click any sentence to jump straight to it.
+            </p>
           </div>
           <div className="tts-tip-card">
             <div className="tts-tip-bar" />
-            <p>Click any highlighted word in the word box above to listen to just that tricky word.</p>
+            <p>
+              <strong>Synchronized Font:</strong> Your chosen font (<strong>{selectedFont.name}</strong>) and spacing
+              automatically apply to the text being read aloud.
+            </p>
           </div>
           <div className="tts-tip-card">
             <div className="tts-tip-bar" />
-            <p>Upload TXT, Word (.docx), or PDF documents directly using the upload button above.</p>
+            <p>
+              <strong>Speed &amp; Voices:</strong> Try <strong>0.75×</strong> for a calmer, more comfortable reading
+              pace. Supports TXT, Word, and PDF document imports.
+            </p>
           </div>
         </div>
       </div>

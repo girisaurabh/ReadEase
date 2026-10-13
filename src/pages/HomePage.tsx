@@ -34,22 +34,6 @@ const FloatingIllusCard: React.FC<IllusCardProps> = ({ label, color, delay, styl
   </div>
 );
 
-interface IllusBlockProps {
-  img: string;
-  title: string;
-  color: string;
-  to: string;
-}
-
-const IllusBlock: React.FC<IllusBlockProps> = ({ img, title, color, to }) => (
-  <Link to={to} className="illus-block" style={{ ['--block-color' as any]: color }}>
-    <div className="illus-block-img">
-      <img src={img} alt={title} loading="lazy" />
-    </div>
-    <p>{title}</p>
-  </Link>
-);
-
 interface ToolCardProps {
   to: string;
   title: string;
@@ -73,7 +57,7 @@ export const HomePage: React.FC = () => {
       {/* Hero Section */}
       <section className="hero">
         <BlobBackground />
-        
+
         <div className="hero-content">
           <div>
             <div className="hero-badge">✨Free forever — no login needed✨</div>
@@ -83,8 +67,8 @@ export const HomePage: React.FC = () => {
             every <span className="highlight-purple">brilliant</span> mind
           </h1>
           <p className="hero-sub">
-            DyslexiEase gives people with dyslexia superpowered reading tools — text-to-speech,
-            dyslexia-friendly fonts, colour overlays, reading ruler and more. 100% free, no signup, no fuss.
+            DyslexiEase gives people with dyslexia superpowered reading tools — text-to-speech with sentence focus,
+            dyslexia-friendly fonts, colour overlays, reading ruler, and formatted text export. 100% free, no signup, no fuss.
           </p>
           <div className="hero-ctas">
             <Link to="/reading-workspace" className="btn-primary">
@@ -109,30 +93,6 @@ export const HomePage: React.FC = () => {
         <FloatingIllusCard label="❤️You can do it!" color="#FEF3C7" delay={1.3} style={{ bottom: '28%', left: '1%' }} />
       </section>
 
-      {/* Target Audiences Illustration Strip */}
-      <section className="illus-strip">
-        <div className="illus-strip-inner">
-          <IllusBlock
-            img="https://i.pinimg.com/736x/fa/be/62/fabe624e42e75abf027078f927bcc601.jpg"
-            title="Educators/Teachers"
-            color="#DBEAFE"
-            to="/educators"
-          />
-          <IllusBlock
-            img="https://img.magnific.com/premium-vector/three-preschool-kids-sitting-floor-learning-together_79217-424.jpg"
-            title="Children"
-            color="#EDE9FE"
-            to="/kids"
-          />
-          <IllusBlock
-            img="https://img.freepik.com/free-vector/children-doing-experiment-vector-educational-flat-graphic_53876-105793.jpg"
-            title="Parents/Guardians"
-            color="#D1FAE5"
-            to="/parents"
-          />
-        </div>
-      </section>
-
       {/* Interactive Tools Strip */}
       <section className="tools-strip">
         <div className="tools-inner">
@@ -146,14 +106,14 @@ export const HomePage: React.FC = () => {
           <ToolCard
             to="/text-to-speech"
             title="Text to Speech"
-            desc="Hear any text read aloud. Control speed, click any word to hear it."
+            desc="Hear text read aloud with synchronized sentence focus mode, natural voices, and clickable words."
             color="#DBEAFE"
             accent="#3B82F6"
           />
           <ToolCard
             to="/font-changer"
             title="Font Changer"
-            desc="Switch to fonts built to stop letters from flipping and reduce eye strain."
+            desc="Switch to fonts built to prevent letter confusion, fine-tune spacing, and download formatted text."
             color="#EDE9FE"
             accent="#8B5CF6"
           />

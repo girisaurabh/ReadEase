@@ -1,63 +1,11 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Download, FileCode, FileText, Volume2, Check, AlertCircle } from 'lucide-react';
 import { FontChangerIllustration } from '../components/Illustrations';
+import { useReadingSettings, AVAILABLE_FONTS } from '../context/ReadingContext';
+import { downloadAsHtml, downloadAsTxt } from '../utils/downloadFormattedText';
 
-export interface FontOption {
-  id: string;
-  name: string;
-  desc: string;
-  cssFamily: string;
-  preview: string;
-  accent: string;
-  bg: string;
-}
-
-export const FONTS: FontOption[] = [
-  {
-    id: 'opendyslexic',
-    name: 'OpenDyslexic',
-    desc: 'Heavy bottoms stop letters from flipping.',
-    cssFamily: '"OpenDyslexic", serif',
-    preview: 'Aa',
-    accent: '#3B82F6',
-    bg: '#DBEAFE',
-  },
-  {
-    id: 'lexend',
-    name: 'Lexend',
-    desc: 'Reduces visual stress and improves fluency.',
-    cssFamily: '"Lexend", sans-serif',
-    preview: 'Aa',
-    accent: '#8B5CF6',
-    bg: '#EDE9FE',
-  },
-  {
-    id: 'atkinson',
-    name: 'Atkinson Hyperlegible',
-    desc: 'Distinct letterforms from the Braille Institute.',
-    cssFamily: '"Atkinson Hyperlegible", sans-serif',
-    preview: 'Aa',
-    accent: '#10B981',
-    bg: '#D1FAE5',
-  },
-  {
-    id: 'comic',
-    name: 'Comic Sans',
-    desc: 'Surprisingly effective for many dyslexic readers.',
-    cssFamily: '"Comic Sans MS", cursive',
-    preview: 'Aa',
-    accent: '#F59E0B',
-    bg: '#FEF3C7',
-  },
-  {
-    id: 'arial',
-    name: 'Arial',
-    desc: 'Clean, no serifs to confuse letter shapes.',
-    cssFamily: 'Arial, sans-serif',
-    preview: 'Aa',
-    accent: '#EC4899',
-    bg: '#FCE7F3',
-  },
-];
+export const FONTS = AVAILABLE_FONTS;
 
 const FLOATING_LETTERS = [
   { l: 'b', x: '2%', y: '14%', color: '#BFDBFE', size: 56, delay: 0, rot: -10 },
@@ -69,17 +17,79 @@ const FLOATING_LETTERS = [
 ];
 
 export const FontChangerPage: React.FC = () => {
-  const [text, setText] = useState<string>(
-    'Reading is a wonderful journey. Every word is a small adventure, and every sentence is a path to new discovery. With the right font and size, reading becomes easier and more enjoyable for everyone.'
-  );
-  const [selectedFont, setSelectedFont] = useState<FontOption>(FONTS[0]);
-  const [fontSize, setFontSize] = useState<number>(18);
-  const [lineHeight, setLineHeight] = useState<number>(1.8);
-  const [letterSpacing, setLetterSpacing] = useState<number>(0.05);
+  const {
+    text,
+    setText,
+    selectedFont,
+    setSelectedFont,
+    fontSize,
+    setFontSize,
+    lineHeight,
+    setLineHeight,
+    letterSpacing,
+    setLetterSpacing,
+    wordSpacing,
+    paragraphSpacing,
+    textAlign,
+    bgColor,
+    textColor,
+  } = useReadingSettings();
+
+  const [downloadDropdownOpen, setDownloadDropdownOpen] = useState(false);
+  const [downloadFeedback, setDownloadFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleDownload = (format: 'html' | 'txt') => {
+    setDownloadDropdownOpen(false);
+    if (!text.trim()) {
+      setDownloadFeedback({
+        type: 'error',
+        message: 'Cannot download empty text. Please type or paste your reading text first.',
+      });
+      return;
+    }
+
+    try {
+      if (format === 'html') {
+        downloadAsHtml({
+          text,
+          fontName: selectedFont.name,
+          fontFamily: selectedFont.cssFamily,
+          fontSize,
+          lineHeight,
+          letterSpacing,
+          wordSpacing,
+          paragraphSpacing,
+          textAlign,
+          bgColor,
+          textColor,
+          fileName: `dyslexiease-${selectedFont.id}-document`,
+        });
+        setDownloadFeedback({
+          type: 'success',
+          message: `Downloaded formatted HTML with ${selectedFont.name} typography! Open it in any browser.`,
+        });
+      } else {
+        downloadAsTxt(text, `dyslexiease-document`);
+        setDownloadFeedback({
+          type: 'success',
+          message: 'Downloaded as TXT (note: plain text files do not preserve fonts or styling).',
+        });
+      }
+    } catch (err: any) {
+      setDownloadFeedback({
+        type: 'error',
+        message: err.message || 'Download failed.',
+      });
+    }
+
+    setTimeout(() => {
+      setDownloadFeedback(null);
+    }, 4500);
+  };
 
   return (
     <div className="fc-page">
-      {/* Floating Letters */}
+      {/* Floating Background Letters */}
       {FLOATING_LETTERS.map((item, idx) => (
         <div
           key={idx}
@@ -97,7 +107,7 @@ export const FontChangerPage: React.FC = () => {
         </div>
       ))}
 
-      {/* Hero */}
+      {/* Hero Header */}
       <div className="fc-hero">
         <div className="fc-hero-inner">
           <div className="fc-hero-text">
@@ -106,7 +116,7 @@ export const FontChangerPage: React.FC = () => {
             </h1>
             <p>
               Letters like b, d, p and q are easily confused with dyslexia. These fonts are built to keep them distinct.
-              Paste your text and see the difference.
+              Choose your font, customize your layout, and download the formatted text.
             </p>
           </div>
           <div className="fc-hero-art">
@@ -115,11 +125,11 @@ export const FontChangerPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Body Content */}
+      {/* Main Body */}
       <div className="fc-body">
         {/* Font Picker Grid */}
         <div className="fc-font-picker">
-          {FONTS.map(font => {
+          {AVAILABLE_FONTS.map(font => {
             const isSelected = selectedFont.id === font.id;
             return (
               <button
@@ -131,6 +141,7 @@ export const FontChangerPage: React.FC = () => {
                   ['--fcbg' as any]: font.bg,
                 }}
                 onClick={() => setSelectedFont(font)}
+                aria-pressed={isSelected}
               >
                 <div className="fc-font-btn-preview" style={{ fontFamily: font.cssFamily }}>
                   {font.preview}
@@ -155,23 +166,58 @@ export const FontChangerPage: React.FC = () => {
           })}
         </div>
 
-        {/* Workspace */}
+        {/* Feedback Alert */}
+        {downloadFeedback && (
+          <div
+            style={{
+              padding: '12px 18px',
+              borderRadius: 14,
+              background: downloadFeedback.type === 'success' ? '#ecfdf5' : '#fef2f2',
+              border: `1.5px solid ${downloadFeedback.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+              color: downloadFeedback.type === 'success' ? '#065f46' : '#991b1b',
+              fontSize: 14,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+            }}
+          >
+            {downloadFeedback.type === 'success' ? (
+              <Check size={18} color="#059669" />
+            ) : (
+              <AlertCircle size={18} color="#dc2626" />
+            )}
+            <span>{downloadFeedback.message}</span>
+          </div>
+        )}
+
+        {/* Workspace: Left Inputs & Right Preview */}
         <div className="fc-workspace">
           {/* Left Controls */}
           <div className="fc-left">
             <div className="fc-panel">
-              <div className="fc-panel-label">Your text</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div className="fc-panel-label" style={{ marginBottom: 0 }}>Your text</div>
+                <button
+                  type="button"
+                  onClick={() => setText('')}
+                  style={{ fontSize: 12, color: '#ef4444', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Clear
+                </button>
+              </div>
               <textarea
                 className="fc-textarea"
                 value={text}
                 onChange={e => setText(e.target.value)}
                 rows={6}
                 placeholder="Paste or type your text here..."
+                aria-label="Text content to format"
               />
             </div>
 
             <div className="fc-panel">
-              <div className="fc-panel-label">Fine-tune</div>
+              <div className="fc-panel-label">Fine-tune Spacing</div>
               <div className="fc-sliders-stack">
                 {/* Font Size */}
                 <div className="fc-slider-row">
@@ -187,12 +233,13 @@ export const FontChangerPage: React.FC = () => {
                   <input
                     type="range"
                     min={12}
-                    max={32}
+                    max={36}
                     step={1}
                     value={fontSize}
                     onChange={e => setFontSize(parseFloat(e.target.value))}
                     className="fc-slider"
                     style={{ ['--fc-accent' as any]: selectedFont.accent }}
+                    aria-label="Font size"
                   />
                 </div>
 
@@ -216,6 +263,7 @@ export const FontChangerPage: React.FC = () => {
                     onChange={e => setLineHeight(parseFloat(e.target.value))}
                     className="fc-slider"
                     style={{ ['--fc-accent' as any]: selectedFont.accent }}
+                    aria-label="Line height"
                   />
                 </div>
 
@@ -239,20 +287,166 @@ export const FontChangerPage: React.FC = () => {
                     onChange={e => setLetterSpacing(parseFloat(e.target.value))}
                     className="fc-slider"
                     style={{ ['--fc-accent' as any]: selectedFont.accent }}
+                    aria-label="Letter spacing"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Right Preview */}
+          {/* Right Preview & Download Action */}
           <div className="fc-right">
+            {/* Download Bar and TTS Quick Action */}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 10,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#fff',
+                padding: '14px 18px',
+                borderRadius: 18,
+                border: '1.5px solid #e5e7eb',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+              }}
+            >
+              {/* Prominent Download Formatted Text Button with Dropdown */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setDownloadDropdownOpen(!downloadDropdownOpen)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: selectedFont.accent,
+                    color: '#ffffff',
+                    padding: '10px 18px',
+                    borderRadius: 14,
+                    fontFamily: 'Nunito, sans-serif',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    border: 'none',
+                    boxShadow: `0 4px 14px ${selectedFont.accent}55`,
+                    transition: 'all 0.2s ease',
+                  }}
+                  aria-expanded={downloadDropdownOpen}
+                >
+                  <Download size={16} />
+                  Download Formatted Text
+                  <span style={{ fontSize: 10, opacity: 0.8 }}>▼</span>
+                </button>
+
+                {downloadDropdownOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '115%',
+                      left: 0,
+                      zIndex: 50,
+                      background: '#ffffff',
+                      borderRadius: 16,
+                      boxShadow: '0 12px 32px rgba(0,0,0,0.14)',
+                      border: '1.5px solid #e2e8f0',
+                      padding: 8,
+                      minWidth: 260,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleDownload('html')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'none',
+                        border: 'none',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                    >
+                      <FileCode size={20} color="#3b82f6" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                          Download as HTML
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.3 }}>
+                          Preserves {selectedFont.name} font, line height, letter spacing &amp; styling in browser.
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownload('txt')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'none',
+                        border: 'none',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                    >
+                      <FileText size={20} color="#64748b" style={{ marginTop: 2, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                          Download as TXT
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.3 }}>
+                          Exports complete text (plain text cannot preserve fonts or colors).
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Seamless Jump to TTS */}
+              <Link
+                to="/text-to-speech"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '10px 16px',
+                  borderRadius: 14,
+                  background: '#f1f5f9',
+                  color: 'var(--text)',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontFamily: 'Nunito, sans-serif',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <Volume2 size={16} color="#7c3aed" />
+                Listen in Text-to-Speech &rarr;
+              </Link>
+            </div>
+
+            {/* Reading Preview Panel */}
             <div className="fc-preview-panel" style={{ background: selectedFont.bg }}>
               <div
                 className="fc-preview-tag"
                 style={{ color: selectedFont.accent, background: `${selectedFont.accent}22` }}
               >
-                {selectedFont.name}
+                {selectedFont.name} Preview
               </div>
               <div
                 className="fc-preview-text"
@@ -261,9 +455,10 @@ export const FontChangerPage: React.FC = () => {
                   fontSize: `${fontSize}px`,
                   lineHeight,
                   letterSpacing: `${letterSpacing}em`,
+                  whiteSpace: 'pre-wrap',
                 }}
               >
-                {text || 'Your text will appear here.'}
+                {text || 'Your formatted text will appear here.'}
               </div>
             </div>
 

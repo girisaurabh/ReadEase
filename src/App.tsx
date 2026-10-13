@@ -11,6 +11,7 @@ import { KidsPage } from './pages/KidsPage';
 import { ParentsPage } from './pages/ParentsPage';
 import { EducatorsPage } from './pages/EducatorsPage';
 import { ReadingWorkspacePage } from './pages/ReadingWorkspacePage';
+import { ReadingProvider } from './context/ReadingContext';
 
 // Component to scroll to top whenever navigation changes
 const ScrollToTop: React.FC = () => {
@@ -44,25 +45,27 @@ export const App: React.FC = () => {
   };
 
   return (
-    <BrowserRouter>
-      <ScrollToTop />
-      <MagicCursor enabled={cursorEnabled} />
-      <Navbar cursorEnabled={cursorEnabled} onToggleCursor={toggleCursor} />
-      <main>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/reading-workspace" element={<ReadingWorkspacePage />} />
-          <Route path="/text-to-speech" element={<TextToSpeechPage />} />
-          <Route path="/font-changer" element={<FontChangerPage />} />
-          <Route path="/colour-overlay" element={<ColourOverlayPage />} />
-          <Route path="/kids" element={<KidsPage />} />
-          <Route path="/parents" element={<ParentsPage />} />
-          <Route path="/educators" element={<EducatorsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
-      <Footer />
-    </BrowserRouter>
+    <ReadingProvider>
+      <BrowserRouter>
+        <ScrollToTop />
+        <MagicCursor enabled={cursorEnabled} />
+        <Navbar cursorEnabled={cursorEnabled} onToggleCursor={toggleCursor} />
+        <main>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/reading-workspace" element={<ReadingWorkspacePage />} />
+            <Route path="/text-to-speech" element={<TextToSpeechPage />} />
+            <Route path="/font-changer" element={<FontChangerPage />} />
+            <Route path="/colour-overlay" element={<ColourOverlayPage />} />
+            <Route path="/kids" element={<KidsPage />} />
+            <Route path="/parents" element={<ParentsPage />} />
+            <Route path="/educators" element={<EducatorsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        <Footer />
+      </BrowserRouter>
+    </ReadingProvider>
   );
 };
 
